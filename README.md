@@ -1,2 +1,2 @@
-# level1-image-classification-level1-cv-12
-level1-image-classification-level1-cv-12 created by GitHub Classroom
+# BoostCampAITech CV 12조 시트리
+## LV1 ImageClassification
