@@ -1,2 +1,1 @@
-# Level1 P STAGE Image Classification
-##
+# Image Classification
