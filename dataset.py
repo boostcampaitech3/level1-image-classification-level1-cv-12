@@ -184,7 +184,7 @@ class MaskBaseDataset(Dataset):
         multi_class_label = self.encode_multi_class(mask_label, gender_label, age_label)
         
         # torchvision aug
-#         image_transform = self.transform()
+#         image_transform = self.transform(image)
         
         # albumentations
         image_transform = self.transform(image=np.array(image))['image']
