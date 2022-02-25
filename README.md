@@ -1,2 +1,2 @@
-# BoostCampAITech CV 12조 시트리
-## LV1 ImageClassification
+# Level1 P STAGE Image Classification
+##
