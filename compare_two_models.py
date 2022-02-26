@@ -67,8 +67,8 @@ def rearrange_by_feature(df_org:pd.DataFrame):
 # Main script
 if __name__=="__main__":
     # Get the indices of two models for comparing
-    idx_mdl1 = ''#str(input('First model index[Just enter space for index 1]: ()'))
-    idx_mdl2 = '2'#str(input('Second model index[Just enter space for index 1]: ()'))
+    idx_mdl1 = str(input('First model index[Just enter space for index 1]: ()'))
+    idx_mdl2 = str(input('Second model index[Just enter space for index 1]: ()'))
 
     path_rslt1 = f'./model/exp{idx_mdl1}/pred_result.csv'
     path_rslt2 = f'./model/exp{idx_mdl2}/pred_result.csv'
