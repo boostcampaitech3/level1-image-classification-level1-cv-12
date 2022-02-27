@@ -175,7 +175,7 @@ class MaskBaseDataset(Dataset):
         self.transform = transform
 
     def __getitem__(self, index):
-        assert self.transform is not None, ".set_tranform 메소드를 이용하여 transform 을 주입해주세요"
+#         assert self.transform is not None, ".set_tranform 메소드를 이용하여 transform 을 주입해주세요"
 
         image = self.read_image(index)
         mask_label = self.get_mask_label(index)
@@ -301,7 +301,7 @@ class TestDataset(Dataset):
     def __init__(self, img_paths, resize, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
         self.img_paths = img_paths
         self.transform = transforms.Compose([
-            Resize((224,224)),
+            Resize((224,224), Image.BILINEAR),
             ToTensor(),
             Normalize(mean=mean, std=std),
         ])
