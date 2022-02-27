@@ -17,6 +17,14 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from efficientnet_pytorch import EfficientNet
+from sklearn.metrics import f1_score
+
+import torchvision
+from torchvision import transforms
+
+from torchvision.transforms import *
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 from dataset import MaskBaseDataset
 from loss import create_criterion
@@ -75,6 +83,7 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
     figure = plt.figure(figsize=(12, 18 + 2))  # cautions: hardcoded, 이미지 크기에 따라 figsize 를 조정해야 할 수 있습니다. T.T
     plt.subplots_adjust(top=0.8)               # cautions: hardcoded, 이미지 크기에 따라 top 를 조정해야 할 수 있습니다. T.T
     n_grid = np.ceil(n ** 0.5)
+    n_grid = int(n_grid)
     tasks = ["mask", "gender", "age"]
     for idx, choice in enumerate(choices):
         gt = gts[choice].item()
@@ -98,6 +107,7 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
     return figure
 
 def select_model(model, num_classes):
+    print("num!!!!!!!!!!!!!! : ", num_classes)
     if model == 'resnet18':
         model_ = models.resnet18(pretrained=True)
         model_.classifier = nn.Linear(1024, num_classes)
@@ -108,7 +118,7 @@ def select_model(model, num_classes):
         model_ = torch.hub.load('pytorch/vision:v0.10.0', 'shufflenet_v2_x1_0', pretrained=True)
         model_.fc = nn.Linear(1024, num_classes)
     elif model == 'efficientnet':
-        model_ = EfficientNet.from_pretrained('efficientnet-b0',num_classes)
+        model_ = EfficientNet.from_pretrained('efficientnet-b0',num_classes = num_classes)
     return model_
 
 
@@ -129,6 +139,63 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
+# torchvision transform
+# def get_transforms(need=('train', 'val'), img_size=(512, 384)):
+#     transformations = {}
+#     if 'train' in need:
+#         transformations['train'] = torchvision.transforms.Compose([
+#             Resize((224, 224)),
+#             RandomRotation([-8, +8]),
+#             ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),  # todo : param
+#             ToTensor(),
+#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+#         ])
+#     if 'val' in need:
+#         transformations['val'] = torchvision.transforms.Compose([
+#             Resize((224,224)),
+#             ToTensor(),
+#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+#         ])
+#     return transformations    
+    
+# albumentations  
+def get_transforms(need=('train', 'val'), img_size=(512, 384)):
+    transformations = {}
+    if 'train' in need:
+        transformations['train'] = transforms.Compose([
+            Resize((224,224)),
+            RandomRotation([-8, +8]),
+            ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),
+            ToTensor(),
+            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    if 'val' in need:
+        transformations['val'] = transforms.Compose([
+            Resize((224,224)),
+            ToTensor(),
+            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    # if 'train' in need:
+    #     transformations['train'] = A.Compose([
+    #         A.Resize(224,224, p=1.0),
+    #         A.HorizontalFlip(p=0.5),
+    #         A.ShiftScaleRotate(p=0.5),
+    #         A.HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
+    #         A.RandomBrightnessContrast(brightness_limit=(-0.1, 0.1), contrast_limit=(-0.1, 0.1), p=0.5),
+    #         A.GaussNoise(p=0.5),
+    #         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+    #         ToTensorV2(p=1.0),
+    #     ], p=1.0)
+    # if 'val' in need:
+    #     transformations['val'] = A.Compose([
+    #         A.Resize(224,224),
+    #         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+    #         ToTensorV2(p=1.0),
+    #     ], p=1.0)
+
+    
+    return transformations  
+
 
 def train(data_dir, model_dir, args):
     seed_everything(args.seed)
@@ -147,17 +214,22 @@ def train(data_dir, model_dir, args):
     )
     num_classes = dataset.num_classes  # 18
 
-    # -- augmentation
-    transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
-    transform = transform_module(
-        resize=args.resize,
-        mean=dataset.mean,
-        std=dataset.std,
-    )
-    dataset.set_transform(transform)
+    # # -- augmentation
+    # transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
+    # transform = transform_module(
+    #     resize=args.resize,
+    #     mean=dataset.mean,
+    #     std=dataset.std,
+    # )
+    # dataset.set_transform(transform)
 
-    # -- data_loader
+	# -- data_loader
+    transform = get_transforms()
+    
     train_set, val_set = dataset.split_dataset()
+    
+    train_set.dataset.set_transform(transform['train'])
+    val_set.dataset.set_transform(transform['val'])
 
     train_loader = DataLoader(
         train_set,
@@ -171,7 +243,7 @@ def train(data_dir, model_dir, args):
     val_loader = DataLoader(
         val_set,
         batch_size=args.valid_batch_size,
-        num_workers=0,
+        num_workers=multiprocessing.cpu_count()//2,
         shuffle=False,
         pin_memory=use_cuda,
         drop_last=True,
@@ -185,6 +257,7 @@ def train(data_dir, model_dir, args):
 #     model = torch.nn.DataParallel(model)
     
     model = select_model('efficientnet', 18).to(device)
+    model = torch.nn.DataParallel(model)
     
     # -- loss & metric
     criterion = create_criterion(args.criterion)  # default: cross_entropy
@@ -201,10 +274,14 @@ def train(data_dir, model_dir, args):
     with open(os.path.join(save_dir, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump(vars(args), f, ensure_ascii=False, indent=4)
 
-    best_val_f1 = 0
     best_val_acc = 0
     best_val_loss = np.inf
-    for epoch in tqdm(range(args.epochs), 'Training sequence'):
+    best_val_f1 = 0
+
+    scaler = torch.cuda.amp.GradScaler()#####
+    #for epoch in tqdm(range(args.epochs), 'Training sequence'):
+    for epoch in range(args.epochs):
+        
         # train loop
         model.train()
         loss_value = 0
@@ -216,27 +293,38 @@ def train(data_dir, model_dir, args):
         for idx, train_batch in enumerate(train_loader):
             inputs, labels = train_batch
             
-            list_labels.append(labels)
+            #list_labels.append(labels) ##########
             
             inputs = inputs.to(device)
             labels = labels.to(device)
 
             optimizer.zero_grad()
 
-            outs = model(inputs)
-            preds = torch.argmax(outs, dim=-1)
-            loss = criterion(outs, labels)
-            
-            list_preds.append(preds.cpu())
+            with torch.cuda.amp.autocast():#####
+                outs = model(inputs)
+                preds = torch.argmax(outs, dim=-1)
+                loss = criterion(outs, labels)
+                # print(outs.shape)
+                # print(preds.shape)
+            list_labels.append(labels.detach().cpu().numpy())
+            list_preds.append(preds.detach().cpu().numpy())
+            #list_preds.append(preds.cpu())	
 
-            loss.backward()
-            optimizer.step()
+            #loss.backward()
+            scaler.scale(loss).backward()
+            #optimizer.step()
+            scaler.step(optimizer)
 
             loss_value += loss.item()
             matches += (preds == labels).sum().item()
             if (idx + 1) % args.log_interval == 0:
                 train_loss = loss_value / args.log_interval
                 train_acc = matches / args.batch_size / args.log_interval
+
+                tot_labels = np.concatenate(list_labels)
+                tot_preds = np.concatenate(list_preds)
+                train_f1 = f1_score(tot_labels, tot_preds, average='macro')
+
                 current_lr = get_lr(optimizer)
                 print(
                     f"Epoch[{epoch}/{args.epochs}]({idx + 1}/{len(train_loader)}) || "
@@ -247,15 +335,17 @@ def train(data_dir, model_dir, args):
 
                 loss_value = 0
                 matches = 0
-        
+            scaler.update()
+
         tot_labels = np.concatenate(list_labels)
         tot_preds = np.concatenate(list_preds)
+        train_f1 = f1_score(tot_labels, tot_preds, average='macro')
         print(f'tot_labels shape: {tot_labels.shape}, head: {tot_labels[:5]}, max: [{tot_labels.max()}], min: [{tot_labels.min()}]')
         print(f'tot_preds shape: {tot_preds.shape}, head: {tot_preds[:5]}, max: [{tot_preds.max()}], min: [{tot_labels.min()}]')
-        train_f1 = f1_score(tot_labels, tot_preds, average='macro')
-        print(f"Epoch[{epoch}/{args.epochs}] || training f1 {train_f1:.2}")                
+        print(f"Epoch[{epoch}/{args.epochs}] || training f1 {train_f1:.4}")                
 
         scheduler.step()
+
 
         # val loop
         with torch.no_grad():
@@ -263,21 +353,23 @@ def train(data_dir, model_dir, args):
             model.eval()
             val_loss_items = []
             val_acc_items = []
+            list_val_labels = []
+            list_val_preds = [] 
+            
             figure = None
             
-            list_val_labels = []
-            list_val_preds = []
+
             for val_batch in val_loader:
                 inputs, labels = val_batch
-                list_val_labels.append(labels)
+                #list_val_labels.append(labels)
                 
                 inputs = inputs.to(device)
                 labels = labels.to(device)
 
                 outs = model(inputs)
                 preds = torch.argmax(outs, dim=-1)
-                    
-                list_val_preds.append(preds.detach().cpu())
+                list_val_labels.append(labels.detach().cpu().numpy())
+                list_val_preds.append(preds.detach().cpu().numpy())
 
                 loss_item = criterion(outs, labels).item()
                 acc_item = (labels == preds).sum().item()
@@ -291,23 +383,24 @@ def train(data_dir, model_dir, args):
                         inputs_np, labels, preds, n=16, shuffle=args.dataset != "MaskSplitByProfileDataset"
                     )
                     
-                    
+            
+            # tot_val_labels = np.concatenate(list_val_labels)
+            # tot_val_preds = np.concatenate(list_val_preds)
+            # val_f1 = f1_score(tot_val_labels, tot_val_preds, average='macro')
+            val_loss = np.sum(val_loss_items) / len(val_loader)
+            val_acc = np.sum(val_acc_items) / len(val_set)
             tot_val_labels = np.concatenate(list_val_labels)
             tot_val_preds = np.concatenate(list_val_preds)
             val_f1 = f1_score(tot_val_labels, tot_val_preds, average='macro')
-            val_loss = np.sum(val_loss_items) / len(val_loader)
-            val_acc = np.sum(val_acc_items) / len(val_set)
-            best_val_loss = min(best_val_loss, val_loss)
-#             if val_acc > best_val_acc:
-#                 print(f"New best model for val accuracy : {val_acc:4.2%}! saving the best model..")
-#                 torch.save(model.state_dict(), f"{save_dir}/best.pth")
-#                 best_val_acc = val_acc
+
             if val_f1 > best_val_f1:
-                print(f"New best model for val f1 : {val_f1:.2}! saving the best model..")
+                print(f"New best model for val f1 : {val_f1:4.4}! saving the best model..")
                 torch.save(model.state_dict(), f"{save_dir}/best.pth")
+                best_val_loss = val_loss
+                best_val_acc = val_acc
                 best_val_f1 = val_f1
                 # ========== Error analysis code ==========
-                print(classification_report(tot_val_labels, tot_val_preds)) # For print in terminal
+                print(classification_report(tot_val_labels, tot_val_preds, digits = 4)) # For print in terminal
                 rslt_f1_by_class = classification_report(tot_val_labels, tot_val_preds, output_dict=True) # For save as csv
                 save_f1_result(epoch, rslt_f1_by_class, save_dir, save_best=True) # Save validation classification report
                 save_best_val_pred(tot_val_labels, tot_val_preds, save_dir) # Save best validation prediction result
@@ -315,8 +408,8 @@ def train(data_dir, model_dir, args):
                 
             torch.save(model.state_dict(), f"{save_dir}/last.pth")
             print(
-                f"[Val] f1 : {val_f1:.2} acc : {val_acc:4.2%}, loss: {val_loss:4.2} || "
-                f"best f1 : {best_val_f1:.2}, best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}"
+                f"[Val] f1 : {val_f1:4.4} acc : {val_acc:4.2%}, loss: {val_loss:4.4} || "
+                f"best f1 : {best_val_f1:.4}, acc at best : {best_val_acc:4.2%}, loss at best: {best_val_loss:4.4}"
             )
             logger.add_scalar("Val/f1", val_f1, epoch)
             logger.add_scalar("Val/loss", val_loss, epoch)
@@ -333,19 +426,19 @@ if __name__ == '__main__':
     load_dotenv(verbose=True)
 
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
-    parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train (default: 1)')
+    parser.add_argument('--epochs', type=int, default=30, help='number of epochs to train (default: 1)')
     parser.add_argument('--dataset', type=str, default='MaskSplitByProfileDataset', help='dataset augmentation type (default: MaskBaseDataset)')
-    parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
-    parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
+#       parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
+#    parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
     parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=32, help='input batch size for validing (default: 1000)')
 #     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
-    parser.add_argument('--lr_decay_step', type=int, default=20, help='learning rate scheduler deacy step (default: 20)')
-    parser.add_argument('--log_interval', type=int, default=20, help='how many batches to wait before logging training status')
+    parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--lr_decay_step', type=int, default=10, help='learning rate scheduler decay step (default: 20)')
+    parser.add_argument('--log_interval', type=int, default=50, help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
 
     # Container environment
