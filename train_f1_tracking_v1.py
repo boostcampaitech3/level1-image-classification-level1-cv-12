@@ -9,7 +9,9 @@ from importlib import import_module
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from PIL import Image
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -17,7 +19,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from efficientnet_pytorch import EfficientNet
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, classification_report
 
 import torchvision
 from torchvision import transforms
@@ -28,8 +30,6 @@ from albumentations.pytorch import ToTensorV2
 
 from dataset import MaskBaseDataset
 from loss import create_criterion
-
-import pandas as pd
 
 from tqdm import tqdm
 from sklearn.metrics import f1_score, classification_report
@@ -106,8 +106,7 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
 
     return figure
 
-def select_model(model, num_classes):
-    print("num!!!!!!!!!!!!!! : ", num_classes)
+def select_model(model, num_classes = 18):
     if model == 'resnet18':
         model_ = models.resnet18(pretrained=True)
         model_.classifier = nn.Linear(1024, num_classes)
@@ -139,62 +138,46 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
-# torchvision transform
-# def get_transforms(need=('train', 'val'), img_size=(512, 384)):
-#     transformations = {}
-#     if 'train' in need:
-#         transformations['train'] = torchvision.transforms.Compose([
-#             Resize((224, 224)),
-#             RandomRotation([-8, +8]),
-#             ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),  # todo : param
-#             ToTensor(),
-#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-#         ])
-#     if 'val' in need:
-#         transformations['val'] = torchvision.transforms.Compose([
-#             Resize((224,224)),
-#             ToTensor(),
-#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-#         ])
-#     return transformations    
-    
-# albumentations  
-def get_transforms(need=('train', 'val'), img_size=(512, 384)):
-    transformations = {}
-    if 'train' in need:
-        transformations['train'] = transforms.Compose([
-            Resize((224,224)),
-            RandomRotation([-8, +8]),
-            ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),
-            ToTensor(),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-    if 'val' in need:
-        transformations['val'] = transforms.Compose([
-            Resize((224,224)),
-            ToTensor(),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    # if 'train' in need:
-    #     transformations['train'] = A.Compose([
-    #         A.Resize(224,224, p=1.0),
-    #         A.HorizontalFlip(p=0.5),
-    #         A.ShiftScaleRotate(p=0.5),
-    #         A.HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-    #         A.RandomBrightnessContrast(brightness_limit=(-0.1, 0.1), contrast_limit=(-0.1, 0.1), p=0.5),
-    #         A.GaussNoise(p=0.5),
-    #         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-    #         ToTensorV2(p=1.0),
-    #     ], p=1.0)
-    # if 'val' in need:
-    #     transformations['val'] = A.Compose([
-    #         A.Resize(224,224),
-    #         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-    #         ToTensorV2(p=1.0),
-    #     ], p=1.0)
-
-    
-    return transformations  
+	# torchvision transform	
+# def get_transforms(need=('train', 'val'), img_size=(512, 384)):	
+#     transformations = {}	
+#     if 'train' in need:	
+#         transformations['train'] = torchvision.transforms.Compose([	
+#             Resize((224,224),Image.BILINEAR),	
+#             RandomRotation([-8, +8]),	
+#             ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),  # todo : param	
+#             ToTensor(),	
+#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),	
+#         ])	
+#     if 'val' in need:	
+#         transformations['val'] = torchvision.transforms.Compose([	
+#             Resize((224,224),Image.BILINEAR),	
+#             ToTensor(),	
+#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),	
+#         ])	
+#     return transformations    	
+    	
+# albumentations    	
+def get_transforms(need=('train', 'val'), img_size=(512, 384)):	
+    transformations = {}	
+    if 'train' in need:	
+        transformations['train'] = A.Compose([	
+            A.Resize(224,224, p=1.0),	
+            # A.HorizontalFlip(p=0.5),	
+            # A.ShiftScaleRotate(p=0.5,rotate_limit=15),	
+            # A.HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),	
+            # A.RandomBrightnessContrast(brightness_limit=(-0.1, 0.1), contrast_limit=(-0.1, 0.1), p=0.5),	
+            # A.GaussNoise(p=0.5),	
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),	
+            ToTensorV2(p=1.0),	
+        ], p=1.0)	
+    if 'val' in need:	
+        transformations['val'] = A.Compose([	
+            A.Resize(224,224, p=1.0),	
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),	
+            ToTensorV2(p=1.0),	
+        ], p=1.0)
+    return transformations    
 
 
 def train(data_dir, model_dir, args):
@@ -208,28 +191,25 @@ def train(data_dir, model_dir, args):
     print(f'Device[{device}] is on for training')
 
     # -- dataset
-    dataset_module = getattr(import_module("dataset"), args.dataset)  # default: BaseAugmentation
+    dataset_module = getattr(import_module("dataset"), args.dataset)
     dataset = dataset_module(
         data_dir=data_dir,
     )
     num_classes = dataset.num_classes  # 18
 
-    # # -- augmentation
+    # -- augmentation
     # transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
     # transform = transform_module(
     #     resize=args.resize,
     #     mean=dataset.mean,
     #     std=dataset.std,
     # )
-    # dataset.set_transform(transform)
+    #dataset.set_transform(transform)
 
-	# -- data_loader
+    # -- data_loader
     transform = get_transforms()
-    
+
     train_set, val_set = dataset.split_dataset()
-    
-    train_set.dataset.set_transform(transform['train'])
-    val_set.dataset.set_transform(transform['val'])
 
     train_loader = DataLoader(
         train_set,
@@ -256,9 +236,7 @@ def train(data_dir, model_dir, args):
 #     ).to(device)
 #     model = torch.nn.DataParallel(model)
     
-    model = select_model('efficientnet', 18).to(device)
-    model = torch.nn.DataParallel(model)
-    
+    model = select_model('efficientnet', 18).to(device)    
     # -- loss & metric
     criterion = create_criterion(args.criterion)  # default: cross_entropy
     opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: SGD
@@ -279,9 +257,8 @@ def train(data_dir, model_dir, args):
     best_val_f1 = 0
 
     scaler = torch.cuda.amp.GradScaler()#####
-    #for epoch in tqdm(range(args.epochs), 'Training sequence'):
-    for epoch in range(args.epochs):
-        
+    for epoch in tqdm(range(args.epochs), 'Training sequence'):
+
         # train loop
         model.train()
         loss_value = 0
@@ -289,11 +266,9 @@ def train(data_dir, model_dir, args):
         
         list_labels = []
         list_preds = []
-        
+        train_set.dataset.set_transform(transform['train']) #
         for idx, train_batch in enumerate(train_loader):
             inputs, labels = train_batch
-            
-            #list_labels.append(labels) ##########
             
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -304,8 +279,6 @@ def train(data_dir, model_dir, args):
                 outs = model(inputs)
                 preds = torch.argmax(outs, dim=-1)
                 loss = criterion(outs, labels)
-                # print(outs.shape)
-                # print(preds.shape)
             list_labels.append(labels.detach().cpu().numpy())
             list_preds.append(preds.detach().cpu().numpy())
             #list_preds.append(preds.cpu())	
@@ -346,7 +319,7 @@ def train(data_dir, model_dir, args):
 
         scheduler.step()
 
-
+        #dataset.change_transform('val')############# val tranformation으로 바꿈
         # val loop
         with torch.no_grad():
             print("Calculating validation results...")
@@ -357,7 +330,7 @@ def train(data_dir, model_dir, args):
             list_val_preds = [] 
             
             figure = None
-            
+            train_set.dataset.set_transform(transform['val'])
 
             for val_batch in val_loader:
                 inputs, labels = val_batch
@@ -428,7 +401,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
     parser.add_argument('--epochs', type=int, default=30, help='number of epochs to train (default: 1)')
     parser.add_argument('--dataset', type=str, default='MaskSplitByProfileDataset', help='dataset augmentation type (default: MaskBaseDataset)')
-#       parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
+#    parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
 #    parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
     parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 64)')
     parser.add_argument('--valid_batch_size', type=int, default=32, help='input batch size for validing (default: 1000)')
