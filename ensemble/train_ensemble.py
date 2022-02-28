@@ -215,6 +215,7 @@ def train(data_dir, model_dir, args):
 
         # -- loss & metric
         criterion = create_criterion(args.criterion)  # default: cross_entropy
+#         criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([1,1,20,1,1,20,1,1,20,1,1,20,1,1,20,1,1,20]).to(device))
         opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: SGD
         optimizer = opt_module(
             filter(lambda p: p.requires_grad, model.parameters()),
@@ -361,10 +362,10 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--criterion', type=str, default='label_smoothing', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
     parser.add_argument('--lr_decay_step', type=int, default=10, help='learning rate scheduler decay step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=50, help='how many batches to wait before logging training status')
-    parser.add_argument('--name', default='ensem', help='model save at {SM_MODEL_DIR}/{name}')
+    parser.add_argument('--name', default='third_ensem', help='model save at {SM_MODEL_DIR}/{name}')
 
     # Container environment
     parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))

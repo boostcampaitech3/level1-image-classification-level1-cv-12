@@ -11,6 +11,9 @@ from torch.utils.data import Dataset, Subset, random_split
 from torchvision import transforms
 from torchvision.transforms import *
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
 IMG_EXTENSIONS = [
     ".jpg", ".JPG", ".jpeg", ".JPEG", ".png",
     ".PNG", ".ppm", ".PPM", ".bmp", ".BMP",
@@ -292,17 +295,17 @@ class MaskSplitByProfileDataset(MaskBaseDataset):
 class TestDataset(Dataset):
     def __init__(self, img_paths, resize, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
         self.img_paths = img_paths
-        self.transform = transforms.Compose([
-            Resize((224,224), Image.BILINEAR),
-            ToTensor(),
-            Normalize(mean=mean, std=std),
-        ])
+        self.transform = A.Compose([
+            A.Resize(224,224, p=1.0),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+            ToTensorV2(p=1.0),
+        ], p=1.0)
 
     def __getitem__(self, index):
         image = Image.open(self.img_paths[index])
 
         if self.transform:
-            image = self.transform(image)
+            image_transform = self.transform(image=np.array(image))['image']
         return image
 
     def __len__(self):
