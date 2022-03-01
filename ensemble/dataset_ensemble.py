@@ -306,7 +306,7 @@ class TestDataset(Dataset):
 
         if self.transform:
             image_transform = self.transform(image=np.array(image))['image']
-        return image
+        return image_transform
 
     def __len__(self):
         return len(self.img_paths)
