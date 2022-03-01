@@ -15,6 +15,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from nni.utils import merge_parameter
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -25,36 +26,42 @@ import torchvision
 from torchvision import transforms
 from torchvision.transforms import *
 
+# AUGMENTATION
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+
+# AUTO-ML
+import nni
 
 from dataset import MaskBaseDataset
 from loss import create_criterion
 
+
 # ========== Error analysis code ==========
-def save_best_val_pred(y_true:np.array, y_pred:np.array, dir_model:str):
+def save_best_val_pred(y_true: np.array, y_pred: np.array, dir_model: str):
     df_val_pred = pd.DataFrame({'true': y_true,
                                 'pred': y_pred}
-                              )
-    
-    df_val_pred.to_csv(dir_model + '/pred_result.csv', index=False)   
+                               )
+
+    df_val_pred.to_csv(dir_model + '/pred_result.csv', index=False)
 
 
-def save_f1_result(epoch:int, report:dict, dir_model:str, save_best=True):
+def save_f1_result(epoch: int, report: dict, dir_model: str, save_best=True):
     df_f1_rslt = pd.DataFrame(columns=['precision', 'recall', 'f1'],
                               index=np.arange(0, 18),
                               dtype=np.float32
                               )
-    
+
     for idx in df_f1_rslt.index:
         k = str(idx)
         df_f1_rslt.loc[idx, :] = report[k]['precision'], report[k]['recall'], report[k]['f1-score']
-    
+
     if save_best:
-        df_f1_rslt.to_csv(dir_model + '/f1_result.csv', index=False) 
+        df_f1_rslt.to_csv(dir_model + '/f1_result.csv', index=False)
     else:
-        df_f1_rslt.to_csv(dir_model + f'/f1_result_epoch_{epoch}.csv', index=False) 
-# ========== Error analysis code ==========
+        df_f1_rslt.to_csv(dir_model + f'/f1_result_epoch_{epoch}.csv', index=False)
+    # ========== Error analysis code ==========
+
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -77,7 +84,7 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
 
     choices = random.choices(range(batch_size), k=n) if shuffle else list(range(n))
     figure = plt.figure(figsize=(12, 18 + 2))  # cautions: hardcoded, 이미지 크기에 따라 figsize 를 조정해야 할 수 있습니다. T.T
-    plt.subplots_adjust(top=0.8)               # cautions: hardcoded, 이미지 크기에 따라 top 를 조정해야 할 수 있습니다. T.T
+    plt.subplots_adjust(top=0.8)  # cautions: hardcoded, 이미지 크기에 따라 top 를 조정해야 할 수 있습니다. T.T
     n_grid = np.ceil(n ** 0.5)
     tasks = ["mask", "gender", "age"]
     for idx, choice in enumerate(choices):
@@ -101,6 +108,7 @@ def grid_image(np_images, gts, preds, n=16, shuffle=False):
 
     return figure
 
+
 def select_model(model, num_classes=18):
     if model == 'resnet18':
         model_ = models.resnet18(pretrained=True)
@@ -112,13 +120,12 @@ def select_model(model, num_classes=18):
         model_ = torch.hub.load('pytorch/vision:v0.10.0', 'shufflenet_v2_x1_0', pretrained=True)
         model_.fc = nn.Linear(1024, num_classes)
     elif model == 'efficientnet':
-        model_ = EfficientNet.from_pretrained('efficientnet-b0',num_classes=num_classes)
+        model_ = EfficientNet.from_pretrained('efficientnet-b0', num_classes=num_classes)
     return model_
 
 
 def increment_path(path, exist_ok=False):
     """ Automatically increment path, i.e. runs/exp --> runs/exp0, runs/exp1 etc.
-
     Args:
         path (str or pathlib.Path): f"{model_dir}/{args.name}".
         exist_ok (bool): whether increment path (increment if False).
@@ -133,46 +140,27 @@ def increment_path(path, exist_ok=False):
         n = max(i) + 1 if i else 2
         return f"{path}{n}"
 
-# torchvision transform
-# def get_transforms(need=('train', 'val'), img_size=(512, 384)):
-#     transformations = {}
-#     if 'train' in need:
-#         transformations['train'] = torchvision.transforms.Compose([
-#             Resize((224,224),Image.BILINEAR),
-#             RandomRotation([-8, +8]),
-#             ColorJitter(brightness=0.5, saturation=0.5, hue=0.5),  # todo : param
-#             ToTensor(),
-#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-#         ])
-#     if 'val' in need:
-#         transformations['val'] = torchvision.transforms.Compose([
-#             Resize((224,224),Image.BILINEAR),
-#             ToTensor(),
-#             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-#         ])
-#     return transformations    
-    
-# albumentations    
+# albumentations
 def get_transforms(need=('train', 'val'), img_size=(512, 384)):
     transformations = {}
     if 'train' in need:
         transformations['train'] = A.Compose([
-            A.Resize(224,224, p=1.0),
+            A.Resize(224, 224, p=1.0),
             A.HorizontalFlip(p=0.5),
-            A.ShiftScaleRotate(p=0.5,rotate_limit=15),
-            A.HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-            A.RandomBrightnessContrast(brightness_limit=(-0.1, 0.1), contrast_limit=(-0.1, 0.1), p=0.5),
-            A.GaussNoise(p=0.5),
+            A.ElasticTransform(p=0.3),
+            A.GridDistortion(p=0.2),
+            A.MedianBlur(p=0.5),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
             ToTensorV2(p=1.0),
         ], p=1.0)
     if 'val' in need:
         transformations['val'] = A.Compose([
-            A.Resize(224,224, p=1.0),
+            A.Resize(224, 224, p=1.0),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
             ToTensorV2(p=1.0),
         ], p=1.0)
-    return transformations    
+    return transformations
+
 
 def train(data_dir, model_dir, args):
     seed_everything(args.seed)
@@ -191,25 +179,25 @@ def train(data_dir, model_dir, args):
     num_classes = dataset.num_classes  # 18
 
     # -- augmentation
-#     transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
-#     transform = transform_module(
-#         resize=args.resize,
-#         mean=dataset.mean,
-#         std=dataset.std,
-#     )
-#     dataset.set_transform(transform)
+    #     transform_module = getattr(import_module("dataset"), args.augmentation)  # default: BaseAugmentation
+    #     transform = transform_module(
+    #         resize=args.resize,
+    #         mean=dataset.mean,
+    #         std=dataset.std,
+    #     )
+    #     dataset.set_transform(transform)
 
     # -- data_loader
     transform = get_transforms()
-    
+
     train_set, val_set = dataset.split_dataset()
-#     train_set.dataset.set_transform(transform['train'])
-#     val_set.dataset.set_transform(transform['val'])
+    #     train_set.dataset.set_transform(transform['train'])
+    #     val_set.dataset.set_transform(transform['val'])
 
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
-        num_workers=multiprocessing.cpu_count()//2,
+        num_workers=multiprocessing.cpu_count() // 2,
         shuffle=True,
         pin_memory=use_cuda,
         drop_last=True,
@@ -218,21 +206,21 @@ def train(data_dir, model_dir, args):
     val_loader = DataLoader(
         val_set,
         batch_size=args.valid_batch_size,
-        num_workers=multiprocessing.cpu_count()//2,
+        num_workers=multiprocessing.cpu_count() // 2,
         shuffle=False,
         pin_memory=use_cuda,
         drop_last=True,
     )
 
     # -- model
-#     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
-#     model = model_module(
-#         num_classes=num_classes
-#     ).to(device)
-#     model = torch.nn.DataParallel(model)
-    
+    #     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
+    #     model = model_module(
+    #         num_classes=num_classes
+    #     ).to(device)
+    #     model = torch.nn.DataParallel(model)
+
     model = select_model('efficientnet', 18).to(device)
-    
+
     # -- loss & metric
     criterion = create_criterion(args.criterion)  # default: cross_entropy
     opt_module = getattr(import_module("torch.optim"), args.optimizer)  # default: SGD
@@ -241,7 +229,7 @@ def train(data_dir, model_dir, args):
         lr=args.lr,
         weight_decay=5e-4
     )
-    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.5)
+    scheduler = StepLR(optimizer, args.lr_decay_step, gamma=0.7)
 
     # -- logging
     logger = SummaryWriter(log_dir=save_dir)
@@ -258,7 +246,7 @@ def train(data_dir, model_dir, args):
         matches = 0
         list_labels = []
         list_preds = []
-        train_set.dataset.set_transform(transform['train']) # 
+        train_set.dataset.set_transform(transform['train'])  #
         for idx, train_batch in enumerate(train_loader):
             inputs, labels = train_batch
             inputs = inputs.to(device)
@@ -269,7 +257,7 @@ def train(data_dir, model_dir, args):
             outs = model(inputs)
             preds = torch.argmax(outs, dim=-1)
             loss = criterion(outs, labels)
-            
+
             list_labels.append(labels.detach().cpu().numpy())
             list_preds.append(preds.detach().cpu().numpy())
 
@@ -305,7 +293,7 @@ def train(data_dir, model_dir, args):
             val_acc_items = []
             list_labels = []
             list_preds = []
-            
+
             figure = None
             val_set.dataset.set_transform(transform['val'])
             for val_batch in val_loader:
@@ -315,10 +303,10 @@ def train(data_dir, model_dir, args):
 
                 outs = model(inputs)
                 preds = torch.argmax(outs, dim=-1)
-                
+
                 list_labels.append(labels.detach().cpu().numpy())
                 list_preds.append(preds.detach().cpu().numpy())
-                
+
                 loss_item = criterion(outs, labels).item()
                 acc_item = (labels == preds).sum().item()
                 val_loss_items.append(loss_item)
@@ -330,34 +318,39 @@ def train(data_dir, model_dir, args):
                     figure = grid_image(
                         inputs_np, labels, preds, n=16, shuffle=args.dataset != "MaskSplitByProfileDataset"
                     )
-            
+
             val_loss = np.sum(val_loss_items) / len(val_loader)
             val_acc = np.sum(val_acc_items) / len(val_set)
             tot_val_labels = np.concatenate(list_labels)
             tot_val_preds = np.concatenate(list_preds)
             val_f1 = f1_score(tot_val_labels, tot_val_preds, average='macro')
-            
+
             if val_f1 > best_f1:
                 print(f"New best model for val f1 : {val_f1:4.2%}! saving the best model..")
                 torch.save(model.state_dict(), f"{save_dir}/best.pth")
                 best_val_loss = val_loss
                 best_val_acc = val_acc
                 best_f1 = val_f1
-            # ========== Error analysis code ==========
-                print(classification_report(tot_val_labels, tot_val_preds)) # For print in terminal
-                rslt_f1_by_class = classification_report(tot_val_labels, tot_val_preds, output_dict=True) # For save as csv
-                save_f1_result(epoch, rslt_f1_by_class, save_dir, save_best=True) # Save validation classification report
-                save_best_val_pred(tot_val_labels, tot_val_preds, save_dir) # Save best validation prediction result
+                # ========== Error analysis code ==========
+                print(classification_report(tot_val_labels, tot_val_preds))  # For print in terminal
+                rslt_f1_by_class = classification_report(tot_val_labels, tot_val_preds,
+                                                         output_dict=True)  # For save as csv
+                save_f1_result(epoch, rslt_f1_by_class, save_dir,
+                               save_best=True)  # Save validation classification report
+                save_best_val_pred(tot_val_labels, tot_val_preds, save_dir)  # Save best validation prediction result
             # ========== Error analysis code ==========
             torch.save(model.state_dict(), f"{save_dir}/last.pth")
             print(
                 f"[Val] acc : {val_acc:4.2%}, loss: {val_loss:4.2}, f1: {val_f1:4.2%} || "
-                f"best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}, f1: {best_f1:4.2%} || " 
+                f"best acc : {best_val_acc:4.2%}, best loss: {best_val_loss:4.2}, f1: {best_f1:4.2%} || "
             )
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
             logger.add_figure("results", figure, epoch)
+            nni.report_intermediate_result(val_acc)
             print()
+        nni.report_final_result(val_acc)
+
 
 
 if __name__ == '__main__':
@@ -369,25 +362,32 @@ if __name__ == '__main__':
 
     parser.add_argument('--seed', type=int, default=42, help='random seed (default: 42)')
     parser.add_argument('--epochs', type=int, default=15, help='number of epochs to train (default: 1)')
-    parser.add_argument('--dataset', type=str, default='MaskSplitByProfileDataset', help='dataset augmentation type (default: MaskBaseDataset)')
-#     parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
-#     parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
+    parser.add_argument('--dataset', type=str, default='MaskSplitByProfileDataset',
+                        help='dataset augmentation type (default: MaskBaseDataset)')
+    #     parser.add_argument('--augmentation', type=str, default='BaseAugmentation', help='data augmentation type (default: BaseAugmentation)')
+    #     parser.add_argument("--resize", nargs="+", type=list, default=[224, 224], help='resize size for image when training')
     parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 64)')
-    parser.add_argument('--valid_batch_size', type=int, default=32, help='input batch size for validing (default: 1000)')
-#     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
+    parser.add_argument('--valid_batch_size', type=int, default=32,
+                        help='input batch size for validing (default: 1000)')
+    #     parser.add_argument('--model', type=str, default='BaseModel', help='model type (default: BaseModel)')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--criterion', type=str, default='focal', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
     parser.add_argument('--lr_decay_step', type=int, default=5, help='learning rate scheduler decay step (default: 20)')
-    parser.add_argument('--log_interval', type=int, default=50, help='how many batches to wait before logging training status')
+    parser.add_argument('--log_interval', type=int, default=50,
+                        help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
 
     # Container environment
-    parser.add_argument('--data_dir', type=str, default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
+    parser.add_argument('--data_dir', type=str,
+                        default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './model'))
 
     args = parser.parse_args()
+    # args, _ = parser.parse_known_args()
+    tuner_params = nni.get_next_parameter()
+    args = merge_parameter(args, tuner_params)
     print(args)
 
     data_dir = args.data_dir
