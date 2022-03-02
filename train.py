@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision.models as models
-from nni.utils import merge_parameter
+# from nni.utils import merge_parameter
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -31,7 +31,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 # AUTO-ML
-import nni
+# import nni
 
 from dataset import MaskBaseDataset
 from loss import create_criterion
@@ -161,6 +161,24 @@ def get_transforms(need=('train', 'val'), img_size=(512, 384)):
         ], p=1.0)
     return transformations
 
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int64(W * cut_rat)
+    cut_h = np.int64(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+
 
 def train(data_dir, model_dir, args):
     seed_everything(args.seed)
@@ -251,16 +269,24 @@ def train(data_dir, model_dir, args):
             inputs, labels = train_batch
             inputs = inputs.to(device)
             labels = labels.to(device)
-
-            optimizer.zero_grad()
-
-            outs = model(inputs)
-            preds = torch.argmax(outs, dim=-1)
-            loss = criterion(outs, labels)
+            r = np.random.rand(1)
+            # generate mixed sample
+            lam = np.random.beta(args.beta, args.beta)
+            rand_index = torch.randperm(inputs.size()[0]).cuda()
+            target_a = labels
+            target_b = labels[rand_index]
+            bbx1, bby1, bbx2, bby2 = rand_bbox(inputs.size(), lam)
+            inputs[:, :, bbx1:bbx2, bby1:bby2] = inputs[rand_index, :, bbx1:bbx2, bby1:bby2]
+            # adjust lambda to exactly match pixel ratio
+            lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (inputs.size()[-1] * inputs.size()[-2]))
+            # compute output
+            output = model(inputs)
+            preds = torch.argmax(output, dim=-1)
+            loss = criterion(output, target_a) * lam + criterion(output, target_b) * (1. - lam)
 
             list_labels.append(labels.detach().cpu().numpy())
             list_preds.append(preds.detach().cpu().numpy())
-
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
@@ -347,9 +373,9 @@ def train(data_dir, model_dir, args):
             logger.add_scalar("Val/loss", val_loss, epoch)
             logger.add_scalar("Val/accuracy", val_acc, epoch)
             logger.add_figure("results", figure, epoch)
-            nni.report_intermediate_result(val_acc)
+#             nni.report_intermediate_result(val_acc)
             print()
-        nni.report_final_result(val_acc)
+#         nni.report_final_result(val_acc)
 
 
 
@@ -373,21 +399,20 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer type (default: SGD)')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-3)')
     parser.add_argument('--val_ratio', type=float, default=0.2, help='ratio for validaton (default: 0.2)')
-    parser.add_argument('--criterion', type=str, default='cross_entropy', help='criterion type (default: cross_entropy)')
+    parser.add_argument('--criterion', type=str, default='label_smoothing', help='criterion type (default: cross_entropy)')
     parser.add_argument('--lr_decay_step', type=int, default=5, help='learning rate scheduler decay step (default: 20)')
     parser.add_argument('--log_interval', type=int, default=50,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--name', default='exp', help='model save at {SM_MODEL_DIR}/{name}')
-
+    parser.add_argument('--beta', default=1,type=float ,help='hyperparameter beta')
+    parser.add_argument('--cutmix_prob',default=1,type=float,help='cutmix probability')
     # Container environment
-    parser.add_argument('--data_dir', type=str,
-                        default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
+    parser.add_argument('--data_dir', type=str,default=os.environ.get('SM_CHANNEL_TRAIN', '/opt/ml/input/data/train/images'))
     parser.add_argument('--model_dir', type=str, default=os.environ.get('SM_MODEL_DIR', './model'))
-
-    args = parser.parse_args()
+    args = parser.parse_args('')
     # args, _ = parser.parse_known_args()
-    tuner_params = nni.get_next_parameter()
-    args = merge_parameter(args, tuner_params)
+#     tuner_params = nni.get_next_parameter()
+#     args = merge_parameter(args, tuner_params)
     print(args)
 
     data_dir = args.data_dir
